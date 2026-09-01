@@ -10,5 +10,6 @@ tracing = "0.1.44"
 tokio = "1.53.1"
 rodio = "0.22.2"
 mlua = { version = "0.12.0", features = ["lua55", "vendored", "serialize"] }
+dirs = "6"
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
