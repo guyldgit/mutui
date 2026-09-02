@@ -130,7 +130,7 @@ pub fn draw(
         .enumerate()
         .map(|(i, p)| {
             let mark = if app.queue.current == Some(i) { "> " } else { "  " };
-            ListItem::new(format!("{mark}{}", file_name(p))).style(theme.list.style())
+            ListItem::new(format!("{mark}{}", p.title)).style(theme.list.style())
         })
         .collect();
 

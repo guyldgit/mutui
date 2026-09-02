@@ -50,6 +50,8 @@ impl Default for Config {
                 m.insert("fy".into(), "search_youtube".into());
                 m.insert("fso".into(), "search_soundcloud".into());
                 m.insert("ff".into(), "search_files".into());
+                m.insert("ay".into(), "youtube_login".into());
+                m.insert("py".into(), "youtube_playlists".into());
                 m
             },
             picker_keys,

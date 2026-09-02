@@ -5,13 +5,15 @@ mod library;
 mod app;
 mod picker;
 mod input;
+mod backend;
 
 use input::ChordResult;
 use picker::{Picker, SourceKind};
 use app::{App, Focus, InputMode};
+use backend::{Job, WorkerEvent, spawn};
 use player::Player;
 use config::load_config;
-use library::{Library, Queue};
+use library::{Library, Queue, Track};
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
@@ -38,6 +40,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
+    let (jobs, events) = spawn();
+
     let mut app = App {
         player: Player::new()?,
         library: Library::default(),
@@ -46,13 +50,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         queue_sel: 0,
         mode: InputMode::Normal,
         picker: None,
+        jobs,
+        events,
     };
     app.player.set_volume(cfg.volume);
 
     if let Some(path) = cli_path() {
         app.library = Library::open(&path)?;
         if path.is_file() {
-            app.queue.push(path);
+            app.queue.push(Track::local(path.to_path_buf()));
             play_current(&mut app)?;
         }
     }
@@ -93,6 +99,52 @@ fn run(
     loop {
         if app.queue.current.is_some() && app.player.is_empty() && !app.player.is_paused() {
             play_next(app);
+        }
+
+        while let Ok(ev) = app.events.try_recv() {
+            match ev {
+                WorkerEvent::SearchDone(hits) => {
+                    if let Some(p) = app.picker.as_mut() {
+                        p.results = hits;
+                        p.selected = 0;
+                        p.status = format!("{} results", p.results.len());
+                    }
+                }
+                WorkerEvent::SearchErr(e) | WorkerEvent::DownloadErr(e) => {
+                    if let Some(p) = app.picker.as_mut() {
+                        p.status = e;
+                    }
+                }
+                WorkerEvent::DownloadDone(track) => {
+                    app.queue.push(track);
+                    let idle = app.queue.current.is_none() && app.player.is_empty();
+                    if idle {
+                        let i = app.queue.items.len() - 1;
+                        if let Some(path) = app.queue.play_index(i) {
+                            let _ = app.player.play_file(&path);
+                        }
+                    }
+                    app.picker = None;
+                    app.mode = InputMode::Normal;
+                }
+                WorkerEvent::LoginDone => {
+                    if let Some(p) = app.picker.as_mut() {
+                        p.status = "logged in — <leader>py for playlists".into();
+                    }
+                }
+                WorkerEvent::LoginErr(e) | WorkerEvent::CatalogErr(e) => {
+                    if let Some(p) = app.picker.as_mut() {
+                        p.status = e;
+                    }
+                }
+                WorkerEvent::PlaylistsDone(hits) | WorkerEvent::PlaylistItemsDone(hits) => {
+                    if let Some(p) = app.picker.as_mut() {
+                        p.results = hits;
+                        p.selected = 0;
+                        p.status = format!("{} items", p.results.len());
+                    }
+                }
+            }
         }
 
         terminal.draw(|f| ui::draw(f, app, &cfg.theme, &cfg.keys))?;
@@ -183,11 +235,33 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
             app.mode = InputMode::Normal;
         }
         Some("picker_confirm") => {
-            let source = app.picker.as_ref().map(|p| p.source);
-            if let Some(hit) = app.picker.as_mut().and_then(|p| p.confirm()) {
-                if source == Some(SourceKind::Files) {
-                    let path = PathBuf::from(&hit.url);
-                    app.queue.push(path.clone());
+            let Some(picker) = app.picker.as_mut() else { return };
+
+            if picker.needs_search() {
+                if picker.prompt.trim().is_empty() {
+                    picker.status = "type a query".into();
+                    return;
+                }
+                picker.status = "searching...".into();
+                let _ = app.jobs.send(Job::Search {
+                    kind: picker.source,
+                    query: picker.prompt.trim().to_string(),
+                });
+                return;
+            }
+
+            let Some(hit) = picker.confirm() else { return };
+
+            if let Some(id) = hit.url.strip_prefix("playlist:") {
+                picker.status = "loading tracks...".into();
+                let _ = app.jobs.send(Job::YoutubePlaylistItems { id: id.to_string() });
+                return;
+            }
+
+            match picker.source {
+                SourceKind::Files => {
+                    let track = Track::local(PathBuf::from(&hit.url));
+                    app.queue.push(track);
                     let idle = app.queue.current.is_none() && app.player.is_empty();
                     if idle {
                         let i = app.queue.items.len() - 1;
@@ -195,9 +269,16 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
                             let _ = app.player.play_file(&p);
                         }
                     }
+                    app.picker = None;
+                    app.mode = InputMode::Normal;
                 }
-                app.picker = None;
-                app.mode = InputMode::Normal;
+                SourceKind::Youtube | SourceKind::Soundcloud => {
+                    picker.status = "downloading...".into();
+                    let _ = app.jobs.send(Job::Download {
+                        source: picker.source,
+                        hit,
+                    });
+                }
             }
         }
         Some("picker_backspace") => {
@@ -267,7 +348,7 @@ fn dispatch(app: &mut App, action: &str) {
         }
         "queue_add" => {
             if let Some(p) = app.library.selected_path() {
-                app.queue.push(p.to_path_buf());
+                app.queue.push(Track::local(p.to_path_buf()));
             }
         }
         "queue_remove" => {
@@ -282,7 +363,7 @@ fn dispatch(app: &mut App, action: &str) {
             match app.focus {
                 Focus::Library => {
                     if let Some(p) = app.library.selected_path() {
-                        app.queue.push(p.to_path_buf());
+                        app.queue.push(Track::local(p.to_path_buf()));
                         let i = app.queue.items.len() - 1;
                         if let Some(path) = app.queue.play_index(i) {
                             let _ = app.player.play_file(&path);
@@ -297,6 +378,22 @@ fn dispatch(app: &mut App, action: &str) {
             }
         }
         "next" => play_next(app),
+        "youtube_login" => {
+            app.picker = Some(Picker::new(SourceKind::Youtube));
+            if let Some(p) = app.picker.as_mut() {
+                p.status = "opening browser...".into();
+            }
+            app.mode = InputMode::Picker;
+            let _ = app.jobs.send(Job::YoutubeLogin);
+        }
+        "youtube_playlists" => {
+            app.picker = Some(Picker::new(SourceKind::Youtube));
+            if let Some(p) = app.picker.as_mut() {
+                p.status = "loading playlists...".into();
+            }
+            app.mode = InputMode::Picker;
+            let _ = app.jobs.send(Job::YoutubePlaylists);
+        }
         _ => {}
     }
 }

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const EXTS: &[&str] = &["mp3", "flac", "ogg", "wav", "m4a", "aac", "opus", "wma"];
 
@@ -79,23 +79,12 @@ impl Picker {
     }
 
     pub fn confirm(&mut self) -> Option<SearchHit> {
-        match self.source {
-            SourceKind::Files => self.results.get(self.selected).cloned(),
-            SourceKind::Youtube | SourceKind::Soundcloud => {
-                if self.results.is_empty() {
-                    if self.prompt.trim().is_empty() {
-                        self.status = "type a query".into();
-                        return None;
-                    }
-                    self.results = dummy_search(self.source, self.prompt.trim());
-                    self.selected = 0;
-                    self.status = format!("{} results", self.results.len());
-                    None
-                } else {
-                    self.results.get(self.selected).cloned()
-                }
-            }
-        }
+        self.results.get(self.selected).cloned()
+    }
+
+    pub fn needs_search(&self) -> bool {
+        matches!(self.source, SourceKind::Youtube | SourceKind::Soundcloud)
+            && self.results.is_empty()
     }
 
     fn refilter(&mut self) {
@@ -116,15 +105,6 @@ impl Picker {
         self.selected = 0;
         self.status = format!("{} files", self.results.len());
     }
-}
-
-fn dummy_search(source: SourceKind, q: &str) -> Vec<SearchHit> {
-    (1..=5)
-        .map(|i| SearchHit {
-            title: format!("[{}] {} #{}", source.title(), q, i),
-            url: format!("https://example.com/{i}"),
-        })
-        .collect()
 }
 
 fn walk_audio(root: &Path) -> Vec<SearchHit> {
