@@ -1,12 +1,14 @@
 use crate::player::Player;
-use crate::library::{Library, Queue};
-use crate::picker::Picker;
+use crate::library::{Library, Queue, Playback, TrackId};
+use crate::picker::{Picker, SearchHit};
 use std::sync::mpsc::{Receiver, Sender};
 use crate::backend::{Job, WorkerEvent};
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Focus {
     Library,
+    Playlists,
     Queue,
 }
 
@@ -26,4 +28,11 @@ pub struct App {
     pub picker: Option<Picker>,
     pub jobs: Sender<Job>,
     pub events: Receiver<WorkerEvent>,
+    pub playback: Playback,
+    pub playlists: Vec<SearchHit>,
+    pub playlist_sel: usize,
+    pub pending_playlist: bool,
+    pub prefetch: usize,
+    pub in_flight: HashSet<TrackId>,
+    pub awaiting_play: Option<TrackId>,
 }

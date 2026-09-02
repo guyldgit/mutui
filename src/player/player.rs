@@ -41,8 +41,9 @@ pub struct Player {
 
 impl Player {
     pub fn new() -> Result<Self, PlayerError> {
-        let stream = DeviceSinkBuilder::open_default_sink()
+        let mut stream = DeviceSinkBuilder::open_default_sink()
             .map_err(|e| PlayerError::Stream(e.to_string()))?;
+        stream.log_on_drop(false);
 
         let out = AudioOut::connect_new(stream.mixer());
 

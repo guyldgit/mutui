@@ -19,7 +19,7 @@ pub fn draw(
 ) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // title
-        Constraint::Length(5), // now playing
+        Constraint::Length(6), // now playing
         Constraint::Length(3), // progress
         Constraint::Min(8),    // library | queue
         Constraint::Length(3), // volume
@@ -42,11 +42,13 @@ pub fn draw(
         chunks[0],
     );
 
-    let path_text = app
-        .player
-        .current_path()
-        .map(|p| p.display().to_string())
+    let track_name_text = app
+        .queue
+        .current
+        .and_then(|i| app.queue.items.get(i))
+        .map(|t| t.title.clone())
         .unwrap_or_else(|| "(nothing loaded)".into());
+
 
     let (state, state_hl) = if app.player.is_empty() {
         ("Stopped", theme.stopped)
@@ -59,12 +61,23 @@ pub fn draw(
     frame.render_widget(
         Paragraph::new(vec![
             Line::from(vec![
-                Span::styled("File:  ", theme.muted.style()),
-                Span::styled(path_text, theme.normal.style()),
+                Span::styled("Track:  ", theme.muted.style()),
+                Span::styled(track_name_text, theme.normal.style()),
             ]),
             Line::from(vec![
                 Span::styled("State: ", theme.muted.style()),
                 Span::styled(state, state_hl.style()),
+            ]),
+            Line::from(vec![
+                Span::styled("Mode:  ", theme.muted.style()),
+                Span::styled(
+                    format!(
+                        "shuffle {}   repeat {}",
+                        if app.playback.shuffle { "on" } else { "off" },
+                        app.playback.repeat.label()
+                    ),
+                    theme.normal.style(),
+                ),
             ]),
         ])
         .block(border("Now Playing")),
@@ -94,34 +107,67 @@ pub fn draw(
     ])
     .split(chunks[3]);
 
-    let lib_items: Vec<ListItem> = app
-        .library
-        .entries
-        .iter()
-        .map(|e| ListItem::new(e.label()).style(theme.list.style()))
-        .collect();
+        if app.focus == Focus::Playlists {
+        let items: Vec<ListItem> = app
+            .playlists
+            .iter()
+            .map(|pl| ListItem::new(pl.title.clone()).style(theme.list.style()))
+            .collect();
 
-    let mut lib_state = ListState::default().with_selected(
-        (!app.library.entries.is_empty()).then_some(app.library.selected),
-    );
+        let mut state = ListState::default().with_selected(
+            (!app.playlists.is_empty()).then_some(app.playlist_sel),
+        );
 
-    frame.render_stateful_widget(
-        List::new(lib_items)
-            .block(
-                Block::default()
-                    .title(if app.focus == Focus::Library {
-                        "Library *"
-                    } else {
-                        "Library"
-                    })
-                    .borders(Borders::ALL)
-                    .border_style(theme.border.style())
-                    .title_style(theme.muted.style()),
-            )
-            .highlight_style(theme.selected.style()),
-        cols[0],
-        &mut lib_state,
-    );
+        let title = if app.playlists.is_empty() {
+            "Playlists * (none)"
+        } else {
+            "Playlists *"
+        };
+
+        frame.render_stateful_widget(
+            List::new(items)
+                .block(
+                    Block::default()
+                        .title(title)
+                        .borders(Borders::ALL)
+                        .border_style(theme.border.style())
+                        .title_style(theme.muted.style()),
+                )
+                .highlight_style(theme.selected.style())
+                .highlight_symbol("▶ "),
+            cols[0],
+            &mut state,
+        );
+    } else {
+        let lib_items: Vec<ListItem> = app
+            .library
+            .entries
+            .iter()
+            .map(|e| ListItem::new(e.label()).style(theme.list.style()))
+            .collect();
+
+        let mut lib_state = ListState::default().with_selected(
+            (!app.library.entries.is_empty()).then_some(app.library.selected),
+        );
+
+        frame.render_stateful_widget(
+            List::new(lib_items)
+                .block(
+                    Block::default()
+                        .title(if app.focus == Focus::Library {
+                            "Library *"
+                        } else {
+                            "Library"
+                        })
+                        .borders(Borders::ALL)
+                        .border_style(theme.border.style())
+                        .title_style(theme.muted.style()),
+                )
+                .highlight_style(theme.selected.style()),
+            cols[0],
+            &mut lib_state,
+        );
+    }
 
     let queue_items: Vec<ListItem> = app
         .queue

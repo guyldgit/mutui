@@ -1,5 +1,5 @@
-use crate::library::Track;
-use std::path::{Path, PathBuf};
+use super::{Track, Playable};
+use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct Queue {
@@ -15,19 +15,19 @@ impl Queue {
     pub fn current_path(&self) -> Option<&Path> {
         self.current
             .and_then(|i| self.items.get(i))
-            .map(|t| t.path())
+            .and_then(|t| t.path())
     }
 
-    pub fn play_index(&mut self, i: usize) -> Option<PathBuf> {
+    pub fn play_index(&mut self, i: usize) -> Option<Playable> {
         if i < self.items.len() {
             self.current = Some(i);
-            Some(self.items[i].path.clone())
+            Some(self.items[i].playable.clone())
         } else {
             None
         }
     }
 
-    pub fn advance(&mut self) -> Option<PathBuf> {
+    pub fn advance(&mut self) -> Option<Playable> {
         let next = self.current.map(|i| i + 1).unwrap_or(0);
         self.play_index(next)
     }

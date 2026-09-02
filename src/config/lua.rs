@@ -12,6 +12,7 @@ pub struct Config {
     pub leader: String,
     pub leader_keys: HashMap<String, String>,
     pub picker_keys: HashMap<String, String>,
+    pub prefetch: usize,
 }
 
 impl Default for Config {
@@ -30,6 +31,8 @@ impl Default for Config {
         keys.insert("d".into(), "queue_remove".into());
         keys.insert("tab".into(), "focus_next".into());
         keys.insert("n".into(), "next".into());
+        keys.insert("s".into(), "toggle_shuffle".into());
+        keys.insert("l".into(), "cycle_repeat".into());
 
         let mut picker_keys = HashMap::new();
         picker_keys.insert("c-j".into(), "picker_down".into());
@@ -52,9 +55,12 @@ impl Default for Config {
                 m.insert("ff".into(), "search_files".into());
                 m.insert("ay".into(), "youtube_login".into());
                 m.insert("py".into(), "youtube_playlists".into());
+                m.insert("ps".into(), "playlist_save".into());
+                m.insert("po".into(), "playlist_open".into());
                 m
             },
             picker_keys,
+            prefetch: 5,
         }
     }
 }
@@ -148,6 +154,11 @@ pub fn apply_lua(cfg: &mut Config, path: &PathBuf) -> mlua::Result<()> {
             cfg.leader = v;
         }
     }
+    
+    if let Ok(n) = globals.get::<u32>("prefetch") {
+        cfg.prefetch = n as usize;
+    }
+
     Ok(())
 }
 

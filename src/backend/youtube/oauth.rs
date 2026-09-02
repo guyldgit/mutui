@@ -7,7 +7,6 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::process::Command;
 
 const SCOPE: &str = "https://www.googleapis.com/auth/youtube.readonly";
 const AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -215,5 +214,7 @@ fn query_param(qs: &str, key: &str) -> Option<String> {
 }
 
 fn open_browser(url: &str) {
-    let _ = Command::new("xdg-open").arg(url).spawn();
+    if webbrowser::open(url).is_err() {
+        eprintln!("open this URL to log in:\n{url}");
+    }
 }
