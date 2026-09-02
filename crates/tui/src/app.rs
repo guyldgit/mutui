@@ -1,6 +1,6 @@
 use crate::library::{Library, Queue, Playback, TrackId};
 use crate::picker::{Picker, SearchHit};
-use std::sync::mpsc::{Receiver, Sender};
+use std::{path::PathBuf, sync::mpsc::{Receiver, Sender}};
 use crate::backend::{Job, WorkerEvent};
 use std::collections::HashSet;
 use mutui_core::{Handle, Status};
@@ -36,4 +36,5 @@ pub struct App {
     pub prefetch: usize,
     pub in_flight: HashSet<TrackId>,
     pub awaiting_play: Option<TrackId>,
+    pub enqueued_paths: HashSet<PathBuf>,
 }

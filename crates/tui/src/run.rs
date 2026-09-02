@@ -79,6 +79,7 @@ pub fn run(handle: Handle) -> mutui_core::Result<()> {
         prefetch: cfg.prefetch,
         in_flight: HashSet::new(),
         awaiting_play: None,
+        enqueued_paths: HashSet::new(),
     };
     if crate::backend::youtube::oauth::load_token().is_some() {
         let _ = app.jobs.send(Job::YoutubePlaylists);
@@ -106,25 +107,6 @@ pub fn run(handle: Handle) -> mutui_core::Result<()> {
     terminal.show_cursor().map_err(|e| mutui_core::Error::Device(e.to_string()))?;
 
     result.map_err(|e| mutui_core::Error::Device(e.to_string()))
-}
-
-fn enqueue_new_resolved(app: &mut App) {
-    let core_paths: Vec<_> = app
-        .status
-        .queue
-        .iter()
-        .map(|t| t.path.clone())
-        .collect();
-    let extra: Vec<PathBuf> = app
-        .queue
-        .items
-        .iter()
-        .filter_map(|t| t.path().map(PathBuf::from))
-        .filter(|p| !core_paths.iter().any(|c| c == p))
-        .collect();
-    if !extra.is_empty() {
-        let _ = app.handle.send(Command::Enqueue(extra));
-    }
 }
 
 fn start_index(app: &mut App, i: usize) {
@@ -164,9 +146,12 @@ fn play_core_from_tui_queue(app: &mut App, want: usize) {
         .filter(|t| t.path().is_some())
         .count();
 
+    app.enqueued_paths.clear();
+    app.enqueued_paths.extend(paths.iter().cloned());
+
     let _ = app.handle.send(Command::PlayPaths(paths));
-    for _ in 0..skip {
-        let _ = app.handle.send(Command::Next);
+    if skip > 0 {
+        let _ = app.handle.send(Command::PlayIndex(skip));
     }
 }
 
@@ -243,8 +228,6 @@ fn run_loop(
             }
         }
 
-        enqueue_new_resolved(app);
-
         while let Ok(ev) = app.events.try_recv() {
             match ev {
                 WorkerEvent::SearchDone(hits) => {
@@ -312,7 +295,7 @@ fn run_loop(
                             .position(|t| t.id == id)
                             .unwrap_or(0);
                         play_core_from_tui_queue(app, idx);
-                    } else {
+                    } else if app.enqueued_paths.insert(path.clone()) {
                         let _ = app.handle.send(Command::Enqueue(vec![path]));
                     }
 
@@ -484,7 +467,7 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
                         && app.status.state == PlayState::Stopped;
                     if idle {
                         start_index(app, app.queue.items.len() - 1);
-                    } else {
+                    } else if app.enqueued_paths.insert(path.clone()) {
                         let _ = app.handle.send(Command::Enqueue(vec![path]));
                     }
                     app.picker = None;
@@ -592,7 +575,9 @@ fn dispatch(app: &mut App, action: &str) {
             if let Some(p) = app.library.selected_path() {
                 let path = p.to_path_buf();
                 app.queue.push(Track::local(path.clone()));
-                let _ = app.handle.send(Command::Enqueue(vec![path]));
+                if app.enqueued_paths.insert(path.clone()) {
+                    let _ = app.handle.send(Command::Enqueue(vec![path]));
+                }
             }
         }
         "queue_remove" => {

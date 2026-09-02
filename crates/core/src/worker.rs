@@ -16,6 +16,7 @@ pub(crate) struct Worker {
     repeat: Repeat,
     shuffle: bool,
     played: Vec<usize>,
+    started_at: Option<std::time::Instant>,
 }
 
 impl Worker {
@@ -28,6 +29,7 @@ impl Worker {
             repeat: Repeat::Off,
             shuffle: false,
             played: Vec::new(),
+            started_at: None,
         };
         w.publish();
         w
@@ -119,6 +121,7 @@ impl Worker {
                 self.played.clear();
                 Ok(())
             }
+            Command::PlayIndex(i) => self.play_index(i),
         }
     }
 
@@ -152,17 +155,24 @@ impl Worker {
                 let path = t.path.clone();
                 self.engine.play_path(&path)?;
                 self.state = PlayState::Playing;
+                self.started_at = Some(std::time::Instant::now());
                 Ok(())
             }
             Err(_) => {
                 self.engine.stop();
                 self.state = PlayState::Stopped;
+                self.started_at = None;
                 Ok(())
             }
         }
     }
 
     fn on_possible_end(&mut self) -> bool {
+        if let Some(t) = self.started_at {
+            if t.elapsed() < Duration::from_millis(300) {
+                return false;
+            }
+        }
         if self.state != PlayState::Playing || !self.engine.is_idle() {
             return false;
         }

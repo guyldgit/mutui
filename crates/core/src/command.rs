@@ -12,6 +12,7 @@ pub enum Command {
     Stop,
     Next,
     Prev,
+    PlayIndex(usize),
     SetVolume(f32),
     QueueClear,
     QueueRemove { index: usize },

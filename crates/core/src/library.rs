@@ -71,8 +71,8 @@ fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
             }
         } else {
             let ord = ac[i]
-                .to_lowercase()
-                .cmp(bc[j].to_lowercase());
+                .to_ascii_lowercase()
+                .cmp(&bc[j].to_ascii_lowercase());
             i += 1;
             j += 1;
             if ord != std::cmp::Ordering::Equal {
