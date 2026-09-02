@@ -41,7 +41,15 @@ fn collect(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<()> {
         if name.to_string_lossy().starts_with('.') {
             continue;
         }
-        if path.is_dir() {
+        let ft = entry.file_type()?;
+        if ft.is_symlink() {
+            if path.is_file() && is_audio_path(&path) {
+                out.push(path);
+            }
+            continue;
+        }
+
+        if ft.is_dir() {
             collect(&path, out)?;
         } else if is_audio_path(&path) {
             out.push(path);

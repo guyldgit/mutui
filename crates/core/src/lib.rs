@@ -11,7 +11,7 @@ mod worker;
 mod library;
 mod playlist;
 
-pub use command::{Command, Event, PlayState, Status};
+pub use command::{Command, Event, PlayState, Status, Repeat};
 pub use error::{Error, Result};
 pub use handle::Handle;
 pub use player::Player;

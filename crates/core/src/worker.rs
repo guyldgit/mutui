@@ -8,6 +8,8 @@ use crate::error::{Error, Result};
 use crate::queue::Queue;
 use crate::track::Track;
 
+use rand::Rng;
+
 pub(crate) struct Worker {
     queue: Queue,
     engine: Box<dyn Engine>,
@@ -267,6 +269,7 @@ impl Worker {
             self.state = PlayState::Stopped;
             return Ok(());
         }
-        self.play_index(candidates[0])
+        let i = candidates[rand::thread_rng().gen_range(0..candidates.len())];
+        self.play_index(i)
     }
 }

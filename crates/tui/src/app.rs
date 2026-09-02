@@ -36,5 +36,5 @@ pub struct App {
     pub prefetch: usize,
     pub in_flight: HashSet<TrackId>,
     pub awaiting_play: Option<TrackId>,
-    pub enqueued_paths: HashSet<PathBuf>,
+    pub enqueued_ids: HashSet<TrackId>,
 }

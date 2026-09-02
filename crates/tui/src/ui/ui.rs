@@ -45,18 +45,12 @@ pub fn draw(
     );
 
     let track_name_text = app
-        .status
+        .queue
         .current
-        .as_ref()
-        .map(|t| t.title.as_str())
-        .or_else(|| {
-            app.queue
-                .current
-                .and_then(|i| app.queue.items.get(i))
-                .map(|t| t.title.as_str())
-        })
-        .unwrap_or("(nothing loaded)")
-        .to_string();
+        .and_then(|i| app.queue.items.get(i))
+        .map(|t| t.title.clone())
+        .or_else(|| app.status.current.as_ref().map(|t| t.title.clone()))
+        .unwrap_or_else(|| "(nothing loaded)".into());
 
     let (state, state_hl) = match app.status.state {
         PlayState::Stopped => ("Stopped", theme.stopped),
@@ -114,7 +108,7 @@ pub fn draw(
     ])
     .split(chunks[3]);
 
-        if app.focus == Focus::Playlists {
+    if app.focus == Focus::Playlists {
         let items: Vec<ListItem> = app
             .playlists
             .iter()

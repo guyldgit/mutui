@@ -28,7 +28,6 @@ enum Cmd {
     Resume,
     Toggle,
     Stop,
-    Status,
     Next,
     Prev,
     Volume { level: u8 },
@@ -71,14 +70,6 @@ fn run() -> mutui_core::Result<()> {
     match cli.cmd {
         Cmd::Play { paths } => cmd_play(paths),
         Cmd::Tui => cmd_tui(),
-        Cmd::Status => {
-            println!("state: stopped");
-            println!("volume: 100");
-            println!("track:");
-            println!("path:");
-            println!("queue: 0");
-            Ok(())
-        }
         Cmd::Queue {
             action: QueueCmd::List,
         } => {
@@ -122,11 +113,15 @@ fn cmd_play(paths: Vec<PathBuf>) -> mutui_core::Result<()> {
     let handle = Handle::start()?;
     handle.send(Command::PlayPaths(paths))?;
 
+    let mut seen_playing = false;
     loop {
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(50));
         let s = handle.status();
-        if s.state == PlayState::Stopped {
-            break;
+        match s.state {
+            PlayState::Playing | PlayState::Paused => seen_playing = true,
+            PlayState::Stopped if seen_playing => break,
+            PlayState::Stopped => {
+            }
         }
     }
     Ok(())

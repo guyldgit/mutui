@@ -24,7 +24,6 @@ use std::{
     time::Duration,
     collections::{HashMap, HashSet},
 };
-use rand::Rng;
 
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
@@ -79,22 +78,13 @@ pub fn run(handle: Handle) -> mutui_core::Result<()> {
         prefetch: cfg.prefetch,
         in_flight: HashSet::new(),
         awaiting_play: None,
-        enqueued_paths: HashSet::new(),
+        enqueued_ids: HashSet::new(),
     };
     if crate::backend::youtube::oauth::load_token().is_some() {
         let _ = app.jobs.send(Job::YoutubePlaylists);
     }
 
     let _ = app.handle.send(Command::SetVolume(cfg.volume));
-
-    if let Some(path) = cli_path() {
-        app.library = Library::open(&path)?;
-        if path.is_file() {
-            app.queue.push(Track::local(path.to_path_buf()));
-            play_current(&mut app)
-                .map_err(|e| mutui_core::Error::Device(e.to_string()))?;
-        }
-    }
 
     let result = run_loop(&mut terminal, &mut app, &cfg);
 
@@ -146,68 +136,15 @@ fn play_core_from_tui_queue(app: &mut App, want: usize) {
         .filter(|t| t.path().is_some())
         .count();
 
-    app.enqueued_paths.clear();
-    app.enqueued_paths.extend(paths.iter().cloned());
+    app.enqueued_ids.clear();
+    for t in app.queue.items.iter().filter(|t| t.path().is_some()) {
+        app.enqueued_ids.insert(t.id);
+    }
 
     let _ = app.handle.send(Command::PlayPaths(paths));
     if skip > 0 {
         let _ = app.handle.send(Command::PlayIndex(skip));
     }
-}
-
-fn play_current(app: &mut App) -> Result<(), Box<dyn Error>> {
-    if let Some(i) = app.queue.current {
-        start_index(app, i);
-    } else if let Some(i) = next_index(app) {
-        start_index(app, i);
-    }
-    Ok(())
-}
-
-fn next_index(app: &mut App) -> Option<usize> {
-    let n = app.queue.items.len();
-    if n == 0 {
-        return None;
-    }
-
-    if app.playback.repeat == Repeat::One {
-        return app.queue.current;
-    }
-
-    if app.playback.shuffle {
-        if let Some(i) = app.queue.current {
-            if !app.playback.played.contains(&i) {
-                app.playback.played.push(i);
-            }
-        }
-        let current = app.queue.current;
-        let candidates: Vec<usize> = (0..n)
-            .filter(|i| Some(*i) != current && !app.playback.played.contains(i))
-            .collect();
-
-        if candidates.is_empty() {
-            if app.playback.repeat == Repeat::All {
-                app.playback.played.clear();
-                return Some(rand::thread_rng().gen_range(0..n));
-            }
-            return None;
-        }
-        let i = rand::thread_rng().gen_range(0..candidates.len());
-        return Some(candidates[i]);
-    }
-
-    let next = app.queue.current.map(|i| i + 1).unwrap_or(0);
-    if next < n {
-        Some(next)
-    } else if app.playback.repeat == Repeat::All {
-        Some(0)
-    } else {
-        None
-    }
-}
-
-fn cli_path() -> Option<PathBuf> {
-    env::args().nth(1).map(PathBuf::from)
 }
 
 fn run_loop(
@@ -295,8 +232,10 @@ fn run_loop(
                             .position(|t| t.id == id)
                             .unwrap_or(0);
                         play_core_from_tui_queue(app, idx);
-                    } else if app.enqueued_paths.insert(path.clone()) {
-                        let _ = app.handle.send(Command::Enqueue(vec![path]));
+                    } else if let Some(t) = app.queue.items.iter().find(|t| t.id == id) {
+                        if app.enqueued_ids.insert(t.id) {
+                            let _ = app.handle.send(Command::Enqueue(vec![path]));
+                        }
                     }
 
                     crate::backend::fetch::sync_fetches(app);
@@ -467,7 +406,7 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
                         && app.status.state == PlayState::Stopped;
                     if idle {
                         start_index(app, app.queue.items.len() - 1);
-                    } else if app.enqueued_paths.insert(path.clone()) {
+                    } else if app.enqueued_ids.insert(app.queue.items.last().unwrap().id) {
                         let _ = app.handle.send(Command::Enqueue(vec![path]));
                     }
                     app.picker = None;
@@ -573,10 +512,10 @@ fn dispatch(app: &mut App, action: &str) {
         }
         "queue_add" => {
             if let Some(p) = app.library.selected_path() {
-                let path = p.to_path_buf();
-                app.queue.push(Track::local(path.clone()));
-                if app.enqueued_paths.insert(path.clone()) {
-                    let _ = app.handle.send(Command::Enqueue(vec![path]));
+                app.queue.push(Track::local(p.to_path_buf().clone()));
+                let id = app.queue.items.last().unwrap().id;
+                if app.enqueued_ids.insert(id) {
+                    let _ = app.handle.send(Command::Enqueue(vec![p.to_path_buf()]));
                 }
             }
         }
@@ -586,6 +525,7 @@ fn dispatch(app: &mut App, action: &str) {
                 if app.queue_sel > 0 && app.queue_sel >= app.queue.items.len() {
                     app.queue_sel = app.queue.items.len().saturating_sub(1);
                 }
+                play_core_from_tui_queue(app, app.queue.current.unwrap_or(0));
             }
         }
         "play_selected" => match app.focus {
