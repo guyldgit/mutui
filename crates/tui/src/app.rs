@@ -1,9 +1,9 @@
-use crate::player::Player;
 use crate::library::{Library, Queue, Playback, TrackId};
 use crate::picker::{Picker, SearchHit};
 use std::sync::mpsc::{Receiver, Sender};
 use crate::backend::{Job, WorkerEvent};
 use std::collections::HashSet;
+use mutui_core::{Handle, Status};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Focus {
@@ -19,7 +19,8 @@ pub enum InputMode {
 }
 
 pub struct App {
-    pub player: Player,
+    pub handle: Handle,
+    pub status: Status,
     pub library: Library,
     pub queue: Queue,
     pub focus: Focus,

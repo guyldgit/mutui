@@ -1,0 +1,13 @@
+[package]
+name = "mutui"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mutui"
+path = "src/main.rs"
+
+[dependencies]
+mutui-core = { path = "../core" }
+mutui-tui = { path = "../tui" }
+clap.workspace = true

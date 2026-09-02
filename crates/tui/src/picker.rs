@@ -23,7 +23,7 @@ impl SourceKind {
 #[derive(Clone, Debug)]
 pub struct SearchHit {
     pub title: String,
-    pub url: String, // page url OR filesystem path
+    pub url: String,
 }
 
 pub struct Picker {

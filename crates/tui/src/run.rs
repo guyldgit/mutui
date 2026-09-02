@@ -1,19 +1,12 @@
-mod player;
-mod ui;
-mod config;
-mod library;
-mod app;
-mod picker;
-mod input;
-mod backend;
-
-use input::ChordResult;
-use picker::{Picker, SourceKind, SearchHit};
-use app::{App, Focus, InputMode};
-use backend::{Job, WorkerEvent, spawn};
-use player::Player;
-use config::load_config;
-use library::{Library, Queue, Track, Playback, Repeat, Playable};
+use crate::input::{ChordResult, feed_leader};
+use crate::picker::{Picker, SourceKind, SearchHit};
+use crate::app::{App, Focus, InputMode};
+use crate::backend::{Job, WorkerEvent, spawn};
+use crate::config::load_config;
+use crate::library::{Library, Queue, Track, Playback, Repeat, Playable};
+use crate::ui;
+use crate::config::{Config};
+use mutui_core::{Command, Handle, PlayState, Status};
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
@@ -55,19 +48,22 @@ fn silence_audio_stderr() {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+pub fn run(handle: Handle) -> mutui_core::Result<()> {
     silence_audio_stderr();
     let cfg = load_config();
 
-    enable_raw_mode()?;
+    enable_raw_mode().map_err(|e| mutui_core::Error::Device(e.to_string()))?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+    execute!(stdout, EnterAlternateScreen)
+        .map_err(|e| mutui_core::Error::Device(e.to_string()))?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))
+        .map_err(|e| mutui_core::Error::Device(e.to_string()))?;
 
     let (jobs, events) = spawn();
 
     let mut app = App {
-        player: Player::new()?,
+        handle,
+        status: Status::empty(),
         library: Library::default(),
         queue: Queue::default(),
         focus: Focus::Library,
@@ -88,26 +84,47 @@ fn main() -> Result<(), Box<dyn Error>> {
         let _ = app.jobs.send(Job::YoutubePlaylists);
     }
 
-    app.player.set_volume(cfg.volume);
+    let _ = app.handle.send(Command::SetVolume(cfg.volume));
 
     if let Some(path) = cli_path() {
         app.library = Library::open(&path)?;
         if path.is_file() {
             app.queue.push(Track::local(path.to_path_buf()));
-            play_current(&mut app)?;
+            play_current(&mut app)
+                .map_err(|e| mutui_core::Error::Device(e.to_string()))?;
         }
     }
 
-    let result = run(&mut terminal, &mut app, &cfg);
+    let result = run_loop(&mut terminal, &mut app, &cfg);
 
     drop(app);
     crate::backend::cache::wipe();
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+    disable_raw_mode().map_err(|e| mutui_core::Error::Device(e.to_string()))?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)
+        .map_err(|e| mutui_core::Error::Device(e.to_string()))?;
+    terminal.show_cursor().map_err(|e| mutui_core::Error::Device(e.to_string()))?;
 
-    result
+    result.map_err(|e| mutui_core::Error::Device(e.to_string()))
+}
+
+fn enqueue_new_resolved(app: &mut App) {
+    let core_paths: Vec<_> = app
+        .status
+        .queue
+        .iter()
+        .map(|t| t.path.clone())
+        .collect();
+    let extra: Vec<PathBuf> = app
+        .queue
+        .items
+        .iter()
+        .filter_map(|t| t.path().map(PathBuf::from))
+        .filter(|p| !core_paths.iter().any(|c| c == p))
+        .collect();
+    if !extra.is_empty() {
+        let _ = app.handle.send(Command::Enqueue(extra));
+    }
 }
 
 fn start_index(app: &mut App, i: usize) {
@@ -116,20 +133,40 @@ fn start_index(app: &mut App, i: usize) {
     }
     crate::backend::cache::bind_cached(&mut app.queue.items[i]);
     match &app.queue.items[i].playable {
-        Playable::File(path) => {
+        Playable::File(_) => {
             app.awaiting_play = None;
-            let _ = app.player.play_file(path);
+            play_core_from_tui_queue(app, i);
             crate::backend::fetch::sync_fetches(app);
         }
         Playable::Url(_) => {
+            app.awaiting_play = Some(app.queue.items[i].id);
             crate::backend::fetch::sync_fetches(app);
         }
     }
 }
 
-fn play_next(app: &mut App) {
-    if let Some(i) = next_index(app) {
-        start_index(app, i);
+fn play_core_from_tui_queue(app: &mut App, want: usize) {
+    let paths: Vec<PathBuf> = app
+        .queue
+        .items
+        .iter()
+        .filter_map(|t| t.path().map(PathBuf::from))
+        .collect();
+    if paths.is_empty() {
+        return;
+    }
+
+    let skip = app
+        .queue
+        .items
+        .iter()
+        .take(want)
+        .filter(|t| t.path().is_some())
+        .count();
+
+    let _ = app.handle.send(Command::PlayPaths(paths));
+    for _ in 0..skip {
+        let _ = app.handle.send(Command::Next);
     }
 }
 
@@ -188,19 +225,25 @@ fn cli_path() -> Option<PathBuf> {
     env::args().nth(1).map(PathBuf::from)
 }
 
-fn run(
+fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
-    cfg: &config::Config,
+    cfg: &Config,
 ) -> Result<(), Box<dyn Error>> {
     loop {
-        if app.awaiting_play.is_none()
-            && app.queue.current.is_some()
-            && app.player.is_empty()
-            && !app.player.is_paused()
-        {
-            play_next(app);
+        app.status = app.handle.status();
+        if let Some(cur) = app.status.current.as_ref() {
+            if let Some(i) = app
+                .queue
+                .items
+                .iter()
+                .position(|t| t.path() == Some(cur.path.as_path()))
+            {
+                app.queue.current = Some(i);
+            }
         }
+
+        enqueue_new_resolved(app);
 
         while let Ok(ev) = app.events.try_recv() {
             match ev {
@@ -259,10 +302,20 @@ fn run(
                     if let Some(t) = app.queue.items.iter_mut().find(|t| t.id == id) {
                         t.set_file(path.clone());
                     }
+
                     if app.awaiting_play == Some(id) {
                         app.awaiting_play = None;
-                        let _ = app.player.play_file(&path);
+                        let idx = app
+                            .queue
+                            .items
+                            .iter()
+                            .position(|t| t.id == id)
+                            .unwrap_or(0);
+                        play_core_from_tui_queue(app, idx);
+                    } else {
+                        let _ = app.handle.send(Command::Enqueue(vec![path]));
                     }
+
                     crate::backend::fetch::sync_fetches(app);
                     let keep: Vec<PathBuf> = app
                         .queue
@@ -300,7 +353,7 @@ fn run(
                 continue;
             }
             InputMode::Leader { acc } => {
-                match input::feed_leader(acc, &token, &cfg.leader_keys) {
+                match feed_leader(acc, &token, &cfg.leader_keys) {
                     ChordResult::Continue => {}
                     ChordResult::Cancel => app.mode = InputMode::Normal,
                     ChordResult::Action(action) => {
@@ -424,12 +477,15 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
 
             match picker.source {
                 SourceKind::Files => {
-                    let track = Track::local(PathBuf::from(&hit.url));
+                    let path = PathBuf::from(&hit.url);
+                    let track = Track::local(path.clone());
                     app.queue.push(track);
-                    let idle = app.queue.current.is_none() && app.player.is_empty();
+                    let idle = app.queue.current.is_none()
+                        && app.status.state == PlayState::Stopped;
                     if idle {
-                        let i = app.queue.items.len() - 1;
-                        start_index(app, i);
+                        start_index(app, app.queue.items.len() - 1);
+                    } else {
+                        let _ = app.handle.send(Command::Enqueue(vec![path]));
                     }
                     app.picker = None;
                     app.mode = InputMode::Normal;
@@ -441,7 +497,7 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
                         SourceKind::Files => unreachable!(),
                     };
                     app.queue.push(track);
-                    let idle = app.queue.current.is_none() && app.player.is_empty();
+                    let idle = app.queue.current.is_none() && app.status.state == PlayState::Stopped;
                     if idle {
                         start_index(app, app.queue.items.len() - 1);
                     }
@@ -482,15 +538,23 @@ fn handle_picker(app: &mut App, token: &str, picker_keys: &HashMap<String, Strin
 fn dispatch(app: &mut App, action: &str) {
     match action {
         "quit" => {}
-        "toggle_pause" => app.player.toggle_pause(),
-        "volume_up" => app.player.set_volume(app.player.volume() + 0.05),
-        "volume_down" => app.player.set_volume(app.player.volume() - 0.05),
+        "toggle_pause" => {
+            let _ = app.handle.send(Command::TogglePause);
+        }
+        "volume_up" => {
+            let v = (app.status.volume + 0.05).clamp(0.0, 1.0);
+            let _ = app.handle.send(Command::SetVolume(v));
+        }
+        "volume_down" => {
+            let v = (app.status.volume - 0.05).clamp(0.0, 1.0);
+            let _ = app.handle.send(Command::SetVolume(v));
+        }
         "toggle_shuffle" => {
-            app.playback.shuffle = !app.playback.shuffle;
-            app.playback.played.clear();
+            let _ = app.handle.send(Command::ToggleShuffle);
         }
         "cycle_repeat" => {
-            app.playback.repeat = app.playback.repeat.cycle();
+            let r = app.status.repeat.cycle();
+            let _ = app.handle.send(Command::SetRepeat(r));
         }
         "search_youtube" => {
             app.picker = Some(Picker::new(SourceKind::Youtube));
@@ -510,8 +574,8 @@ fn dispatch(app: &mut App, action: &str) {
             app.mode = InputMode::Picker;
         }
         "restart" => {
-            if let Some(p) = app.player.current_path().map(|p| p.to_path_buf()) {
-                let _ = app.player.play_file(&p);
+            if let Some(cur) = app.queue.current {
+                start_index(app, cur);
             }
         }
         "sel_down" => move_sel(app, 1),
@@ -526,7 +590,9 @@ fn dispatch(app: &mut App, action: &str) {
         }
         "queue_add" => {
             if let Some(p) = app.library.selected_path() {
-                app.queue.push(Track::local(p.to_path_buf()));
+                let path = p.to_path_buf();
+                app.queue.push(Track::local(path.clone()));
+                let _ = app.handle.send(Command::Enqueue(vec![path]));
             }
         }
         "queue_remove" => {
@@ -537,31 +603,29 @@ fn dispatch(app: &mut App, action: &str) {
                 }
             }
         }
-        "play_selected" => {
-            match app.focus {
-                Focus::Library => {
-                    if let Some(p) = app.library.selected_path() {
-                        app.queue.push(Track::local(p.to_path_buf()));
-                        let i = app.queue.items.len() - 1;
-                        start_index(app, i);
-                    }
+        "play_selected" => match app.focus {
+            Focus::Library => {
+                if let Some(p) = app.library.enter() {
+                    app.queue.push(Track::local(p));
+                    let i = app.queue.items.len() - 1;
+                    start_index(app, i);
                 }
-                Focus::Queue => {
-                    start_index(app, app.queue_sel);
-                }
-                Focus::Playlists => {
-                    if let Some(pl) = app.playlists.get(app.playlist_sel) {
-                        if let Some(id) = pl.url.strip_prefix("playlist:") {
-                            app.pending_playlist = true;
-                            let _ = app.jobs.send(Job::YoutubePlaylistItems {
-                                id: id.to_string(),
-                            });
-                        }
+            }
+            Focus::Queue => start_index(app, app.queue_sel),
+            Focus::Playlists => {
+                if let Some(pl) = app.playlists.get(app.playlist_sel) {
+                    if let Some(id) = pl.url.strip_prefix("playlist:") {
+                        app.pending_playlist = true;
+                        let _ = app.jobs.send(Job::YoutubePlaylistItems {
+                            id: id.to_string(),
+                        });
                     }
                 }
             }
+        },
+        "next" => {
+            let _ = app.handle.send(Command::Next);
         }
-        "next" => play_next(app),
         "youtube_login" => {
             app.picker = Some(Picker::new(SourceKind::Youtube));
             if let Some(p) = app.picker.as_mut() {
@@ -586,9 +650,8 @@ fn dispatch(app: &mut App, action: &str) {
                     .map(|d| d.as_secs())
                     .unwrap_or(0)
             );
-            match crate::library::saved::save(&name, &app.queue.items) {
-                Ok(()) => {}
-                Err(e) => eprintln!("{e}"),
+            if let Err(e) = crate::library::saved::save(&name, &app.queue.items) {
+                eprintln!("{e}");
             }
         }
         "playlist_open" => {

@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
+use mutui_core::PlayState;
+
 pub fn draw(
     frame: &mut Frame,
     app: &App,
@@ -43,19 +45,23 @@ pub fn draw(
     );
 
     let track_name_text = app
-        .queue
+        .status
         .current
-        .and_then(|i| app.queue.items.get(i))
-        .map(|t| t.title.clone())
-        .unwrap_or_else(|| "(nothing loaded)".into());
+        .as_ref()
+        .map(|t| t.title.as_str())
+        .or_else(|| {
+            app.queue
+                .current
+                .and_then(|i| app.queue.items.get(i))
+                .map(|t| t.title.as_str())
+        })
+        .unwrap_or("(nothing loaded)")
+        .to_string();
 
-
-    let (state, state_hl) = if app.player.is_empty() {
-        ("Stopped", theme.stopped)
-    } else if app.player.is_paused() {
-        ("Paused", theme.paused)
-    } else {
-        ("Playing", theme.playing)
+    let (state, state_hl) = match app.status.state {
+        PlayState::Stopped => ("Stopped", theme.stopped),
+        PlayState::Paused => ("Paused", theme.paused),
+        PlayState::Playing => ("Playing", theme.playing),
     };
 
     frame.render_widget(
@@ -73,8 +79,8 @@ pub fn draw(
                 Span::styled(
                     format!(
                         "shuffle {}   repeat {}",
-                        if app.playback.shuffle { "on" } else { "off" },
-                        app.playback.repeat.label()
+                        if app.status.shuffle { "on" } else { "off" },
+                        app.status.repeat.label()
                     ),
                     theme.normal.style(),
                 ),
@@ -84,15 +90,16 @@ pub fn draw(
         chunks[1],
     );
 
-    let pos = app.player.position();
-    let label = match app.player.duration() {
-        Some(total) => format!("{} / {}", fmt_time(pos), fmt_time(total)),
-        None if !app.player.is_empty() => format!("{} / --:--", fmt_time(pos)),
+    let label = match app.status.position_secs {
+        Some(s) => {
+            let t = Duration::from_secs_f64(s.max(0.0));
+            format!("{} / --:--", fmt_time(t))
+        }
         None => "--:-- / --:--".into(),
     };
     let area = chunks[2];
     let inner_w = area.width.saturating_sub(2) as usize;
-    let bar = render_bar(app.player.progress(), inner_w.saturating_sub(14));
+    let bar = render_bar(0.0, inner_w.saturating_sub(14));
 
     frame.render_widget(
         Paragraph::new(format!("{bar} {label}"))
@@ -202,7 +209,7 @@ pub fn draw(
         &mut queue_state,
     );
 
-    let volume = app.player.volume();
+    let volume = app.status.volume;
     frame.render_widget(
         Gauge::default()
             .block(border("Volume"))
