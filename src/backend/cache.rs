@@ -5,7 +5,7 @@ use std::time::SystemTime;
 pub const MAX_BYTES: u64 = 500 * 1024 * 1024;
 
 pub fn dir() -> PathBuf {
-    std::env::temp_dir().join("musicli")
+    std::env::temp_dir().join("mutui")
 }
 
 pub fn lookup(key: &str) -> Option<PathBuf> {

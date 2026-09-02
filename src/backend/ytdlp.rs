@@ -106,7 +106,7 @@ pub fn download(url: &str) -> Result<PathBuf, YtError> {
 }
 
 fn cache_dir() -> PathBuf {
-    std::env::temp_dir().join("musicli")
+    std::env::temp_dir().join("mutui")
 }
 
 fn run(args: &[&str]) -> Result<String, YtError> {

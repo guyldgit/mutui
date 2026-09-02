@@ -57,7 +57,7 @@ impl SavedTrack {
 pub fn dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("musicli/playlists")
+        .join("mutui/playlists")
 }
 
 pub fn path_for(name: &str) -> PathBuf {

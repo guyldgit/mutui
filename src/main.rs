@@ -44,7 +44,7 @@ fn silence_audio_stderr() {
     let log = dirs::state_dir()
         .or_else(dirs::cache_dir)
         .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join("musicli/audio.log");
+        .join("mutui/audio.log");
     if let Some(dir) = log.parent() {
         let _ = std::fs::create_dir_all(dir);
     }

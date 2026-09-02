@@ -36,7 +36,7 @@ pub fn draw(
     };
 
     frame.render_widget(
-        Paragraph::new("musicli")
+        Paragraph::new("mutui")
             .style(theme.title.style())
             .block(border("")),
         chunks[0],

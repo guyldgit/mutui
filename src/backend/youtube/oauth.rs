@@ -40,13 +40,13 @@ struct TokenResponse {
 pub fn client_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("musicli/google_client.json")
+        .join("mutui/google_client.json")
 }
 
 pub fn token_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("musicli/youtube_token.json")
+        .join("mutui/youtube_token.json")
 }
 
 fn load_client() -> Result<ClientInner, String> {
@@ -145,7 +145,7 @@ pub fn login() -> Result<(), String> {
         return Err("oauth state mismatch".into());
     }
 
-    let body = b"musicli: you can close this tab";
+    let body = b"mutui: you can close this tab";
     let _ = write!(
         stream,
         "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\n\r\n",

@@ -82,7 +82,7 @@ pub fn load_config() -> Config {
 
 fn config_path() -> Option<PathBuf> {
     let mut dir = dirs::config_dir()?;
-    dir.push("musicli");
+    dir.push("mutui");
     dir.push("init.lua");
     Some(dir)
 }
