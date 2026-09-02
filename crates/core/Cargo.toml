@@ -1,0 +1,9 @@
+[package]
+name = "mutui-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+rodio.workspace = true
+rand.workspace = true

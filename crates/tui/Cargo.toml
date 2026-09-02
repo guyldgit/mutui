@@ -1,0 +1,23 @@
+[package]
+name = "mutui-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+mutui-core = { path = "../core" }
+ratatui.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+mlua.workspace = true
+dirs.workspace = true
+color-eyre.workspace = true
+crossterm.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+base64.workspace = true
+rand.workspace = true
+webbrowser.workspace = true
+libc.workspace = true

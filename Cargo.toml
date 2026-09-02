@@ -1,14 +1,25 @@
-[package]
-name = "mutui"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/tui",
+    "crates/cli",
+]
 
-[dependencies]
+[workspace.package]
+edition = "2021"
+license = "UNLICENSED"
+version = "0.1.0"
+
+[workspace.dependencies]
+rodio = "0.22.2"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+
 ratatui = "0.30.2"
 anyhow = "1.0.104"
 tracing = "0.1.44"
 tokio = "1.53.1"
-rodio = "0.22.2"
 mlua = { version = "0.12.0", features = ["lua55", "vendored", "serialize"] }
 dirs = "6"
 color-eyre = "0.6.5"

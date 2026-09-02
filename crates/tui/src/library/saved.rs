@@ -2,7 +2,7 @@ use crate::library::{Playable, Track};
 use crate::picker::SourceKind;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
 pub struct SavedPlaylist {
