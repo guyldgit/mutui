@@ -78,17 +78,24 @@ pub fn download(url: &str) -> Result<PathBuf, YtError> {
     let dir = cache_dir();
     fs::create_dir_all(&dir).map_err(|e| YtError::Command(e.to_string()))?;
 
+    let url = normalize_youtube_url(url);
+
+    // tv_simply,tv used for better mutli-platform support
+    // (came from testing on an arch macbook)
     let template = dir.join("%(id)s.%(ext)s");
-    let out = run(&[
+        let out = run(&[
+        "--force-ipv4",
+        "--extractor-args",
+        "youtube:player_client=tv_simply,tv",
         "-f",
-        "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio[ext=opus]/bestaudio",
+        "bestaudio/bestaudio*",
         "--no-playlist",
         "--no-warnings",
         "--print",
         "after_move:filepath",
         "-o",
         template.to_str().unwrap(),
-        url,
+        &url,
     ])?;
 
     let path = out
@@ -103,6 +110,17 @@ pub fn download(url: &str) -> Result<PathBuf, YtError> {
         return Err(YtError::NoFile);
     }
     Ok(path)
+}
+
+fn normalize_youtube_url(url: &str) -> String {
+    let t = url.trim();
+    if t.len() == 11
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return format!("https://www.youtube.com/watch?v={t}");
+    }
+    t.to_string()
 }
 
 fn cache_dir() -> PathBuf {

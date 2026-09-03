@@ -20,7 +20,7 @@ fn ensure(app: &mut App, i: usize, play: bool) {
     let Playable::Url(url) = &app.queue.items[i].playable else {
         return;
     };
-    if app.in_flight.contains(&id) {
+    if app.in_flight.contains(&id) || app.fetch_failed.contains(&id) {
         return;
     }
     app.in_flight.insert(id);

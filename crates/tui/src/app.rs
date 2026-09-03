@@ -35,6 +35,8 @@ pub struct App {
     pub pending_playlist: bool,
     pub prefetch: usize,
     pub in_flight: HashSet<TrackId>,
+    pub fetch_failed: HashSet<TrackId>,
+    pub last_fetch_err: Option<String>,
     pub awaiting_play: Option<TrackId>,
     pub enqueued_ids: HashSet<TrackId>,
 }

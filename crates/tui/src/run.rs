@@ -77,6 +77,8 @@ pub fn run(handle: Handle) -> mutui_core::Result<()> {
         pending_playlist: false,
         prefetch: cfg.prefetch,
         in_flight: HashSet::new(),
+        fetch_failed: HashSet::new(),
+        last_fetch_err: None,
         awaiting_play: None,
         enqueued_ids: HashSet::new(),
     };
@@ -219,6 +221,8 @@ fn run_loop(
                 }
                 WorkerEvent::FetchDone { id, path } => {
                     app.in_flight.remove(&id);
+                    app.fetch_failed.remove(&id);
+                    app.last_fetch_err = None;
                     if let Some(t) = app.queue.items.iter_mut().find(|t| t.id == id) {
                         t.set_file(path.clone());
                     }
@@ -249,9 +253,11 @@ fn run_loop(
                 }
                 WorkerEvent::FetchErr { id, err } => {
                     app.in_flight.remove(&id);
+                    app.fetch_failed.insert(id);
                     if app.awaiting_play == Some(id) {
                         app.awaiting_play = None;
                     }
+                    app.last_fetch_err = Some(err.clone());
                     eprintln!("fetch {id:?}: {err}");
                 }
             }

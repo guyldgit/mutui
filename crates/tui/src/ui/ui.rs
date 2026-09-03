@@ -21,7 +21,7 @@ pub fn draw(
 ) {
     let chunks = Layout::vertical([
         Constraint::Length(3), // title
-        Constraint::Length(6), // now playing
+        Constraint::Length(7), // now playing
         Constraint::Length(3), // progress
         Constraint::Min(8),    // library | queue
         Constraint::Length(3), // volume
@@ -77,6 +77,17 @@ pub fn draw(
                         app.status.repeat.label()
                     ),
                     theme.normal.style(),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Fetch: ", theme.muted.style()),
+                Span::styled(
+                    app.last_fetch_err.as_deref().unwrap_or("ok"),
+                    if app.last_fetch_err.is_some() {
+                        theme.stopped.style()
+                    } else {
+                        theme.muted.style()
+                    },
                 ),
             ]),
         ])
